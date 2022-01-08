@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Xunit.Internal;
 using Xunit.Runner.Common;
+using Xunit.Runner.v3;
 using Xunit.Sdk;
 using Xunit.v3;
 
@@ -94,6 +95,21 @@ public class ConsoleRunner
 				}
 			};
 
+			// Validate options that aren't legal with -tcp (runners are validated in CommandLine.ChooseReporter)
+			if (project.Configuration.TcpPort.HasValue)
+			{
+				if (project.Configuration.Output.Count != 0)
+					throw new ArgumentException($"cannot specify -{project.Configuration.Output.Keys.First()} when using -tcp");
+				if (project.Configuration.DebugOrDefault)
+					throw new ArgumentException("cannot specify -debug when using -tcp");
+				if (project.Configuration.NoAutoReportersOrDefault)
+					throw new ArgumentException("cannot specify -noautoreporters when using -tcp");
+				if (project.Configuration.PauseOrDefault)
+					throw new ArgumentException("cannot specify -pause when using -tcp");
+				if (project.Configuration.WaitOrDefault)
+					throw new ArgumentException("cannot specify -wait when using -tcp");
+			}
+
 			if (project.Configuration.PauseOrDefault)
 			{
 				Console.Write("Press any key to start execution...");
@@ -108,19 +124,32 @@ public class ConsoleRunner
 			globalInternalDiagnosticMessages = project.Assemblies.Any(a => a.Configuration.InternalDiagnosticMessagesOrDefault);
 			noColor = project.Configuration.NoColorOrDefault;
 			logger = new ConsoleRunnerLogger(!noColor, consoleLock);
-			var diagnosticMessageSink = ConsoleDiagnosticMessageSink.ForInternalDiagnostics(consoleLock, globalInternalDiagnosticMessages, noColor);
-			var reporter = project.RunnerReporter;
-			var reporterMessageHandler = await reporter.CreateMessageHandler(logger, diagnosticMessageSink);
+			var internalDiagnosticMessageSink = ConsoleDiagnosticMessageSink.ForInternalDiagnostics(consoleLock, globalInternalDiagnosticMessages, noColor);
+			var shouldReturnFailErrorCode = false;
 
-			if (!reporter.ForceNoLogo && !project.Configuration.NoLogoOrDefault)
-				PrintHeader();
-
-			var failCount = 0;
-
-			if (project.Configuration.List != null)
-				await ListProject(project);
+			if (project.Configuration.TcpPort.HasValue)
+			{
+				var engineID = Path.GetFileNameWithoutExtension(Assembly.GetEntryAssembly()?.Location) ?? "<unknown assembly>";
+				await using var engine = new TcpExecutionEngine(engineID, project, internalDiagnosticMessageSink);
+				await engine.Start();
+				await engine.WaitForQuit();
+			}
 			else
-				failCount = await RunProject(project, reporterMessageHandler);
+			{
+				var reporterMessageHandler = await project.RunnerReporter.CreateMessageHandler(logger, internalDiagnosticMessageSink);
+
+				if (!project.RunnerReporter.ForceNoLogo && !project.Configuration.NoLogoOrDefault)
+					PrintHeader();
+
+				var failCount = 0;
+
+				if (project.Configuration.List != null)
+					await ListProject(project);
+				else
+					failCount = await RunProject(project, reporterMessageHandler);
+
+				shouldReturnFailErrorCode = failCount > 0;
+			}
 
 			if (cancel)
 				return -1073741510;    // 0xC000013A: The application terminated as a result of a CTRL+C
@@ -133,7 +162,7 @@ public class ConsoleRunner
 				Console.WriteLine();
 			}
 
-			return project.Configuration.IgnoreFailures == true || failCount == 0 ? 0 : 1;
+			return project.Configuration.IgnoreFailures == true || !shouldReturnFailErrorCode ? 0 : 1;
 		}
 		catch (Exception ex)
 		{

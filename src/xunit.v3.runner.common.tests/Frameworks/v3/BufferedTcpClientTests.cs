@@ -6,10 +6,11 @@ using System.Text;
 using System.Threading.Tasks;
 using Xunit;
 using Xunit.Runner.v3;
+using Xunit.v3;
 
 public class BufferedTcpClientTests
 {
-	[Fact(Skip = "Flaky")]
+	[Fact]
 	public async ValueTask MessageSentByClientIsReceivedByServer()
 	{
 		var server = new Server();
@@ -34,7 +35,7 @@ public class BufferedTcpClientTests
 		Assert.Equal("Test123", msg);
 	}
 
-	[Fact(Skip = "Flaky")]
+	[Fact]
 	public async ValueTask MessageSentByServerIsReceivedByClient()
 	{
 		var server = new Server();
@@ -59,7 +60,7 @@ public class BufferedTcpClientTests
 		Assert.Equal("Test123", msg);
 	}
 
-	[Fact(Skip = "Flaky")]
+	[Fact]
 	public async ValueTask MessagesAreRetrievedInOrder()
 	{
 		var server = new Server();
@@ -101,7 +102,12 @@ public class BufferedTcpClientTests
 			this.port = port;
 
 			socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
-			bufferedClient = new BufferedTcpClient(socket, request => Requests.Add(Encoding.UTF8.GetString(request.ToArray())));
+			bufferedClient = new BufferedTcpClient(
+				"client",
+				socket,
+				request => Requests.Add(Encoding.UTF8.GetString(request.ToArray())),
+				_NullMessageSink.Instance
+			);
 		}
 
 		public List<string> Requests { get; } = new();
@@ -169,7 +175,12 @@ public class BufferedTcpClientTests
 					socket.Dispose();
 				});
 
-				bufferedClient = new BufferedTcpClient(socket, request => Requests.Add(Encoding.UTF8.GetString(request.ToArray())));
+				bufferedClient = new BufferedTcpClient(
+					"server",
+					socket,
+					request => Requests.Add(Encoding.UTF8.GetString(request.ToArray())),
+					_NullMessageSink.Instance
+				);
 				bufferedClient.Start();
 			});
 
