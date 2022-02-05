@@ -258,25 +258,6 @@ namespace Xunit.Sdk
 							if (testMethod.Method is _IReflectionMethodInfo reflectionMethodInfo)
 								resolvedData = reflectionMethodInfo.MethodInfo.ResolveMethodArguments(resolvedData);
 
-							if (!resolvedData.All(d => SerializationHelper.IsSerializable(d)))
-							{
-								var typeNames =
-									resolvedData
-										.Select(x => x?.GetType().FullName)
-										.WhereNotNull()
-										.Select(x => $"'{x}'")
-										.ToList();
-
-								TestContext.Current?.SendDiagnosticMessage(
-									"Non-serializable data (one or more of: {0}) found for '{1}.{2}'; falling back to single test case.",
-									string.Join(", ", typeNames),
-									testMethod.TestClass.Class.Name,
-									testMethod.Method.Name
-								);
-
-								return await CreateTestCasesForTheory(discoveryOptions, testMethod, theoryAttribute);
-							}
-
 							try
 							{
 								var testCases =

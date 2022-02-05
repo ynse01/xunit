@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection;
+using System.Runtime.Serialization;
 using System.Security.Cryptography;
 using System.Text;
 using Xunit.Internal;
@@ -15,6 +16,9 @@ namespace Xunit.Sdk
 	/// </summary>
 	public class UniqueIDGenerator : IDisposable
 	{
+		// ObjectIDGenerator creates a unique ID for every instance you give it.
+		// These ID's are unique per instance of ObjectIDGenerator.
+		static ObjectIDGenerator idGenerator = new ObjectIDGenerator();
 		bool disposed;
 		HashAlgorithm hasher;
 		Stream stream;
@@ -31,7 +35,7 @@ namespace Xunit.Sdk
 		/// <summary>
 		/// Add a string value into the unique ID computation.
 		/// </summary>
-		/// <param name="value">The value to be added to the unique ID computation</param>
+		/// <param name="value">The string value to be added to the unique ID computation</param>
 		public void Add(string value)
 		{
 			Guard.ArgumentNotNull(value);
@@ -48,8 +52,25 @@ namespace Xunit.Sdk
 		}
 
 		/// <summary>
+		/// Add a long value into the unique ID computation.
+		/// </summary>
+		/// <param name="value">The long value to be added to the unique ID computation</param>
+		private void Add(long value)
+		{
+			lock (stream)
+			{
+				if (disposed)
+					throw new ObjectDisposedException(nameof(UniqueIDGenerator), "Cannot use UniqueIDGenerator after you have called Compute or Dispose");
+
+				var bytes = BitConverter.GetBytes(value);
+				stream.Write(bytes, 0, bytes.Length);
+				stream.WriteByte(0);
+			}
+		}
+
+		/// <summary>
 		/// Compute the unique ID for the given input values. Note that once the unique
-		/// ID has been computed, no further <see cref="Add"/> operations will be allowed.
+		/// ID has been computed, no further <see cref="Add(string)"/> operations will be allowed.
 		/// </summary>
 		/// <returns>The computed unique ID</returns>
 		public string Compute()
@@ -145,8 +166,10 @@ namespace Xunit.Sdk
 
 			generator.Add(parentUniqueID);
 
-			if (testMethodArguments != null)
-				generator.Add(SerializationHelper.Serialize(testMethodArguments));
+			if (testMethodArguments != null) {
+				var argumentsId = UniqueIDGenerator.idGenerator.GetId(testMethodArguments, out bool _);
+				generator.Add(argumentsId);
+			}
 
 			if (testMethodGenericTypes != null)
 				for (var idx = 0; idx < testMethodGenericTypes.Length; idx++)
