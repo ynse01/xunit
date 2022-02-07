@@ -210,7 +210,7 @@ public class TheoryDiscovererTests : AcceptanceTestV3
 	}
 
 	[Fact]
-	public async void NonSerializableDataYieldsSingleTheoryTestCase()
+	public async void NonSerializableDataYieldsMultipleTheoryTestCases()
 	{
 		var spy = SpyMessageSink.Capture();
 		TestContext.Current!.DiagnosticMessageSink = spy;
@@ -220,11 +220,11 @@ public class TheoryDiscovererTests : AcceptanceTestV3
 
 		var testCases = await discoverer.Discover(discoveryOptions, testMethod, factAttribute);
 
-		var testCase = Assert.Single(testCases);
-		Assert.IsType<XunitDelayEnumeratedTheoryTestCase>(testCase);
-		Assert.Equal($"{typeof(NonSerializableDataClass).FullName}.{nameof(NonSerializableDataClass.TheoryMethod)}", testCase.TestCaseDisplayName);
-		var diagnostic = Assert.Single(spy.Messages.OfType<_DiagnosticMessage>());
-		Assert.Equal($"Non-serializable data (one or more of: '{typeof(NonSerializableDataAttribute).FullName}') found for '{typeof(NonSerializableDataClass).FullName}.{nameof(NonSerializableDataClass.TheoryMethod)}'; falling back to single test case.", diagnostic.Message);
+		Assert.Equal(2, testCases.Count);
+		var testCase = testCases.First();
+		Assert.IsType<XunitPreEnumeratedTheoryTestCase>(testCase);
+		Assert.Equal($"{typeof(NonSerializableDataClass).FullName}.{nameof(NonSerializableDataClass.TheoryMethod)}(a: 42)", testCase.TestCaseDisplayName);
+		Assert.Empty(spy.Messages.OfType<_DiagnosticMessage>());
 	}
 
 	class NonSerializableDataAttribute : DataAttribute
@@ -419,8 +419,9 @@ public class TheoryDiscovererTests : AcceptanceTestV3
 		var testCases = await discoverer.Discover(discoveryOptions, testMethod, factAttribute);
 
 		var testCase = Assert.Single(testCases);
-		Assert.IsType<XunitDelayEnumeratedTheoryTestCase>(testCase);
-		Assert.Equal($"{typeof(ClassWithExplicitConvertedData).FullName}.{nameof(ClassWithExplicitConvertedData.ParameterDeclaredExplicitConversion)}", testCase.TestCaseDisplayName);
+		Assert.IsNotType<XunitDelayEnumeratedTheoryTestCase>(testCase);
+		Assert.StartsWith($"{typeof(ClassWithExplicitConvertedData).FullName}.{nameof(ClassWithExplicitConvertedData.ParameterDeclaredExplicitConversion)}", testCase.TestCaseDisplayName);
+		Assert.Contains($"Value = \"abc\"", testCase.TestCaseDisplayName);
 	}
 
 	class ClassWithExplicitConvertedData

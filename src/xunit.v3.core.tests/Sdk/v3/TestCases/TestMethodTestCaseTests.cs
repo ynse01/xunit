@@ -11,7 +11,7 @@ public class TestMethodTestCaseTests
 	public class Ctor
 	{
 		[Fact]
-		public static void NonSerializableArgumentsThrows()
+		public static void NonSerializableDoesNotArgumentsThrow()
 		{
 			var testMethod = Mocks.TestMethod("MockType", "MockMethod");
 
@@ -19,8 +19,7 @@ public class TestMethodTestCaseTests
 				() => new TestableTestMethodTestCase(testMethod, new object[] { new XunitTestCaseTests() })
 			);
 
-			Assert.IsType<SerializationException>(ex);
-			Assert.Equal($"Type '{typeof(XunitTestCaseTests).FullName}' in Assembly '{typeof(XunitTestCaseTests).Assembly.FullName}' is not marked as serializable.", ex.Message);
+			Assert.Null(ex);
 		}
 
 		[Fact]
@@ -39,7 +38,7 @@ public class TestMethodTestCaseTests
 			Assert.Same(testMethod, testCase.TestMethod);
 			Assert.Null(testCase.TestMethodArguments);
 			Assert.Empty(testCase.Traits);
-			Assert.Equal("4428bc4e444a8f5294832dc06425f20fc994bdc44788f03219b7237f892bffe0", testCase.UniqueID);
+			Assert.Equal("6e5a7c235876441a465e7d499b9a38aba65fbeb82e0961b8f5a9d762462c3b4e", testCase.UniqueID);
 		}
 
 		[Fact]
@@ -298,7 +297,7 @@ public class TestMethodTestCaseTests
 		{
 			var uniqueID = TestableTestMethodTestCase.Create<ClassUnderTest>("TestMethod").UniqueID;
 
-			Assert.Equal("4428bc4e444a8f5294832dc06425f20fc994bdc44788f03219b7237f892bffe0", uniqueID);
+			Assert.Equal("6e5a7c235876441a465e7d499b9a38aba65fbeb82e0961b8f5a9d762462c3b4e", uniqueID);
 		}
 
 		[Fact]
@@ -308,9 +307,9 @@ public class TestMethodTestCaseTests
 			var uniqueIDHelloWorld = TestableTestMethodTestCase.Create<ClassUnderTest>("TestMethod", new object?[] { "Hello, world!" }).UniqueID;
 			var uniqueIDNull = TestableTestMethodTestCase.Create<ClassUnderTest>("TestMethod", new object?[] { null }).UniqueID;
 
-			Assert.Equal("738d958f58f29698b62aa50479dcbb465fc18a500073f46947e60842e79e3e3b", uniqueID42);
-			Assert.Equal("7ed69c84a3b325b79c2fd6a8a808033ac0c3f7bdda1a7575c882e69a5dc7ff9a", uniqueIDHelloWorld);
-			Assert.Equal("e104382e5370a800728ffb748e92f65ffa3925eb888c4f48238d24c180b8bd48", uniqueIDNull);
+			Assert.Equal<object>("4f572d7c5166c4eeda4f39d4fe36e340e9614d830ec8fdfe8e79a76d68f52253", uniqueID42);
+			Assert.Equal<object>("1da29c6b4515659ab9a15294ccfcb5a993379b8950f879f18f0d5eac25fa2bad", uniqueIDHelloWorld);
+			Assert.Equal<object>("ee2b5feaaf5f33dced9fefa915635674a316023613bdfaaa77feb4f379ee250d", uniqueIDNull);
 		}
 
 		class ClassUnderTest

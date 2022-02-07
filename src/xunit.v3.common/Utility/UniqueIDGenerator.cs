@@ -1,7 +1,10 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Security.Cryptography;
 using System.Text;
@@ -19,9 +22,39 @@ namespace Xunit.Sdk
 		// ObjectIDGenerator creates a unique ID for every instance you give it.
 		// These ID's are unique per instance of ObjectIDGenerator.
 		static ObjectIDGenerator idGenerator = new ObjectIDGenerator();
+		static Dictionary<Type, Func<object, byte[]>> primitives =
+			new Dictionary<Type, Func<object, byte[]>>();
 		bool disposed;
 		HashAlgorithm hasher;
 		Stream stream;
+
+		static UniqueIDGenerator()
+		{
+			// These sizes are only known at runtime.
+			primitives[typeof(string)] = (obj) => Encoding.UTF8.GetBytes((string)obj);
+			primitives[typeof(bool)] = (obj) => BitConverter.GetBytes((bool)obj);
+			primitives[typeof(char)] = (obj) => BitConverter.GetBytes((char)obj);
+			primitives[typeof(byte)] = (obj) => BitConverter.GetBytes((byte)obj);
+			primitives[typeof(sbyte)] = (obj) => BitConverter.GetBytes((sbyte)obj);
+			primitives[typeof(short)] = (obj) => BitConverter.GetBytes((short)obj);
+			primitives[typeof(ushort)] = (obj) => BitConverter.GetBytes((ushort)obj);
+			primitives[typeof(int)] = (obj) => BitConverter.GetBytes((int)obj);
+			primitives[typeof(uint)] = (obj) => BitConverter.GetBytes((uint)obj);
+			primitives[typeof(nint)] = (obj) => BitConverter.GetBytes((nint)obj);
+			primitives[typeof(nuint)] = (obj) => BitConverter.GetBytes((nuint)obj);
+			primitives[typeof(IntPtr)] = (obj) => BitConverter.GetBytes((nint)new IntPtr((nint)obj));
+			primitives[typeof(UIntPtr)] = (obj) => BitConverter.GetBytes((nuint)new UIntPtr((nuint)obj));
+			primitives[typeof(long)] = (obj) => BitConverter.GetBytes((long)obj);
+			primitives[typeof(ulong)] = (obj) => BitConverter.GetBytes((ulong)obj);
+			primitives[typeof(float)] = (obj) => BitConverter.GetBytes((float)obj);
+			primitives[typeof(double)] = (obj) => BitConverter.GetBytes((double)obj);
+			primitives[typeof(decimal)] = (obj) =>
+			{
+				decimal dec = (decimal)obj;
+				string str = dec.ToString();
+				return Encoding.UTF8.GetBytes(str);
+			};
+		}
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="UniqueIDGenerator"/> class.
@@ -40,29 +73,23 @@ namespace Xunit.Sdk
 		{
 			Guard.ArgumentNotNull(value);
 
-			lock (stream)
-			{
-				if (disposed)
-					throw new ObjectDisposedException(nameof(UniqueIDGenerator), "Cannot use UniqueIDGenerator after you have called Compute or Dispose");
-
-				var bytes = Encoding.UTF8.GetBytes(value);
-				stream.Write(bytes, 0, bytes.Length);
-				stream.WriteByte(0);
-			}
+			var bytes = Encoding.UTF8.GetBytes(value);
+			AddByteArray(bytes);
 		}
 
 		/// <summary>
-		/// Add a long value into the unique ID computation.
+		/// Add a byte array value into the unique ID computation.
 		/// </summary>
-		/// <param name="value">The long value to be added to the unique ID computation</param>
-		private void Add(long value)
+		/// <param name="bytes">The byte array to be added to the unique ID computation</param>
+		public void AddByteArray(byte[] bytes)
 		{
+			Guard.ArgumentNotNull(bytes);
+
 			lock (stream)
 			{
 				if (disposed)
 					throw new ObjectDisposedException(nameof(UniqueIDGenerator), "Cannot use UniqueIDGenerator after you have called Compute or Dispose");
 
-				var bytes = BitConverter.GetBytes(value);
 				stream.Write(bytes, 0, bytes.Length);
 				stream.WriteByte(0);
 			}
@@ -70,7 +97,7 @@ namespace Xunit.Sdk
 
 		/// <summary>
 		/// Compute the unique ID for the given input values. Note that once the unique
-		/// ID has been computed, no further <see cref="Add(string)"/> operations will be allowed.
+		/// ID has been computed, no further <see cref="Add"/> operations will be allowed.
 		/// </summary>
 		/// <returns>The computed unique ID</returns>
 		public string Compute()
@@ -165,11 +192,7 @@ namespace Xunit.Sdk
 			using var generator = new UniqueIDGenerator();
 
 			generator.Add(parentUniqueID);
-
-			if (testMethodArguments != null) {
-				var argumentsId = UniqueIDGenerator.idGenerator.GetId(testMethodArguments, out bool _);
-				generator.Add(argumentsId);
-			}
+			generator.AddObjectValue(testMethodArguments);
 
 			if (testMethodGenericTypes != null)
 				for (var idx = 0; idx < testMethodGenericTypes.Length; idx++)
@@ -259,6 +282,78 @@ namespace Xunit.Sdk
 			}
 
 			return new string(chars);
+		}
+
+		/// <summary>
+		/// Add test method arguments.
+		/// </summary>
+		void AddObjectValue(object? obj)
+		{
+			if (ReferenceEquals(obj, null))
+			{
+				Add("null");
+				return;
+			}
+			var objType = obj.GetType();
+			var objTypeInfo = Reflector.Wrap(objType);
+			if (obj is IEnumerable list)
+			{
+				foreach (var item in list)
+				{
+					AddObjectValue(item);
+				}
+			}
+			if (objType == typeof(string))
+			{
+				Add((string)obj);
+			}
+			Add(TypeUtility.ConvertToSimpleTypeName(objTypeInfo));
+			if (objType == typeof(Enum))
+			{
+				// Convert to int
+				AddObjectValue((int)obj);
+				return;
+			}
+			if (primitives.TryGetValue(objType, out Func<object, byte[]>? operation))
+			{
+				byte[] arr = operation(obj);
+				AddByteArray(arr);
+				return;
+			}
+			// Still here: assume a complex type.
+			var fields = objType.GetFields();
+			foreach (var field in fields)
+			{
+				if (!field.IsStatic)
+				{
+					Add("Field:");
+					Add(field.Name);
+					AddObjectValue(field.GetValue(obj));
+				}
+			}
+		}
+
+		static void AddUintObject(UniqueIDGenerator generator, object obj)
+		{
+			var bytes = BitConverter.GetBytes((uint)obj);
+			lock (generator.stream)
+			{
+				generator.stream.Write(bytes, 0, bytes.Length);
+			}
+		}
+
+		static void AddIntObject(UniqueIDGenerator generator, object obj)
+		{
+			var bytes = BitConverter.GetBytes((int)obj);
+			lock (generator.stream)
+			{
+				generator.stream.Write(bytes, 0, bytes.Length);
+			}
+		}
+
+		static void AddStringObject(UniqueIDGenerator generator, object obj)
+		{
+			generator.Add((string)obj);
 		}
 	}
 }
